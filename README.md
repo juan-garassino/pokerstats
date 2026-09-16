@@ -160,6 +160,12 @@ pokerStats/
 │   ├── subgame_solver.py      # Real-time subgame refinement
 │   └── cfr_live_bridge.py     # CFR decision engine for live play
 │
+├── equity/                    # Monte Carlo equity engine (pure Python, stdlib only)
+│   ├── cards.py               # Deck vocabulary + two-card range notation
+│   ├── evaluator.py           # Dependency-free 5..7-card hand evaluator
+│   ├── preflop.py             # 169-hand equity table + top-X% range modelling
+│   └── montecarlo.py          # Range-aware equity simulator → EquityResult
+│
 ├── vision/                    # Screen capture + YOLO detection (WIP)
 │
 ├── reference/                 # Target architecture (read-only)
