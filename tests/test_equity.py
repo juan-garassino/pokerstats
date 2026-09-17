@@ -9,9 +9,10 @@ import pytest
 
 from pokerStats.equity import (
     monte_carlo_equity, two_card_notation, top_range_hands,
-    score_hand, best_hand_index, hand_name,
+    score_hand, best_hand_index, hand_name, FULL_DECK,
     STRAIGHT_FLUSH, FLUSH, FULL_HOUSE, FOUR_OF_A_KIND, TWO_PAIR, PAIR, HIGH_CARD,
 )
+from pokerStats.equity.montecarlo import _range_as_cards
 
 
 # ── hand evaluator ──────────────────────────────────────────────────────────
@@ -68,8 +69,78 @@ def test_two_card_notation():
 def test_top_range_hands():
     top10 = top_range_hands(0.1)
     assert "AA" in top10 and "KK" in top10
-    assert "23o" not in top10
+    assert "32o" not in top10
     assert top_range_hands(1.0) >= top10  # full range is a superset
+
+
+def test_top_range_hands_keys_are_canonical():
+    """Range keys must use the same high-rank-first notation the engine emits.
+
+    Regression guard: the preflop table was ported with low-rank-first keys
+    ("KAs", "2To"), so `_range_as_cards` matched only the 13 pocket pairs and
+    silently dropped every non-pair hand. Each key must round-trip through the
+    canonical emitter `two_card_notation`.
+    """
+    for key in top_range_hands(1.0):
+        if len(key) == 2 and key[0] == key[1]:
+            cards = [key[0] + "h", key[0] + "s"]  # pocket pair
+        elif key[2] == "s":
+            cards = [key[0] + "h", key[1] + "h"]  # suited
+        else:
+            cards = [key[0] + "h", key[1] + "s"]  # offsuit
+        assert two_card_notation(cards) == key, f"non-canonical range key: {key}"
+
+
+def test_top_range_hands_includes_broadway_non_pairs():
+    """Top-10% is more than pocket pairs: it must contain AKs and other broadway."""
+    top10 = top_range_hands(0.1)
+    assert "AKs" in top10
+    assert "AQs" in top10 and "AKo" in top10
+    non_pairs = {k for k in top10 if not (len(k) == 2 and k[0] == k[1])}
+    assert non_pairs, "top-10% range collapsed to pocket pairs only"
+
+
+def test_range_materializes_broadway_combos():
+    """Materialised top-10% range includes non-pair combos, not just pairs.
+
+    Directly exercises `_range_as_cards` (the function that silently dropped
+    non-pairs before the key-ordering fix). With the full deck available, the
+    top-10% range must yield strictly more than the 8 * 6 = 48 pocket-pair
+    combos, and at least one concrete non-pair combo (e.g. an AKs).
+    """
+    top10 = top_range_hands(0.1)
+    combos = _range_as_cards(top10, list(FULL_DECK))
+    assert len(combos) > 48, "range materialised to pocket pairs only"
+    # At least one materialised combo must be a broadway non-pair.
+    materialised_keys = {
+        two_card_notation([c0, c1])
+        for i, c0 in enumerate(FULL_DECK)
+        for c1 in FULL_DECK[i + 1:]
+        if two_card_notation([c0, c1]) in top10
+    }
+    assert any(
+        not (len(k) == 2 and k[0] == k[1]) for k in materialised_keys
+    ), "no non-pair hand survived materialisation"
+
+
+def test_equity_vs_non_pair_range_differs_from_pair_range():
+    """Equity vs {AKs} must differ from equity vs {22}.
+
+    Before the fix both ranges behaved identically for many hands because the
+    non-pair key never matched and the sampler fell through, so an assertion
+    like this could not have passed by accident. Hero JJ is a coin-flip / small
+    dog to AKs but a big favourite over 22, so the two equities must diverge.
+    """
+    vs_aks = monte_carlo_equity(
+        ["Js", "Jd"], num_opponents=1, iterations=15_000,
+        opponent_range={"AKs"}, seed=13,
+    )
+    vs_22 = monte_carlo_equity(
+        ["Js", "Jd"], num_opponents=1, iterations=15_000,
+        opponent_range={"22"}, seed=13,
+    )
+    assert abs(vs_aks.equity - vs_22.equity) > 0.05
+    assert vs_22.equity > vs_aks.equity  # JJ dominates 22, only ~coinflip vs AKs
 
 
 # ── Monte Carlo equity ────────────────────────────────────────────────────────
