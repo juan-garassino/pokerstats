@@ -202,7 +202,11 @@ def _deal_with_ranges(
     the whole deck) makes tight ranges cheap: a single-hand range like ``KK``
     costs one draw instead of hundreds of misses. Each opponent's cards are
     then removed from the deck for the board runout; a combo colliding with an
-    already-used card is re-drawn (bounded, with a random fallback).
+    already-used card is re-drawn, bounded by ``_MAX_RANGE_SAMPLE_TRIES``. If
+    the range is exhausted by prior deals, the opponent is completed by taking
+    the first still-available cards in deck order — a deterministic fallback,
+    not a random one (it only triggers for degenerate multiway + ultra-tight
+    ranges).
     """
     used: Set[Card] = set()
     opponents: List[List[Card]] = []
@@ -215,7 +219,7 @@ def _deal_with_ranges(
                 used.add(a)
                 used.add(b)
                 break
-        if pair is None:  # range exhausted by prior deals — fall back to random
+        if pair is None:  # range exhausted — complete deterministically in deck order
             for c in base_deck:
                 if c not in used:
                     pair = pair + [c] if pair else [c]
