@@ -1,0 +1,36 @@
+[project]
+name = "pokerstats"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "pip>=9",
+  "setuptools>=26",
+  "twine",
+  "wheel>=0.29",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "seaborn",
+  "jupyterlab",
+  "jupyter",
+  "scipy",
+  "matplotlib",
+  "black",
+  "coverage",
+  "flake8",
+  "pytest",
+  "yapf",
+  "gcsfs",
+  "google-cloud-storage",
+  "mlflow",
+  "s3fs",
+  "torch>=2.2.0",
+  "gymnasium>=0.29.0",
+  "treys>=0.1.0",
+  "six>=1.14",
+  "joblib",
+  "memoized-property",
+  "termcolor",]
+
+[tool.uv]
+package = false
