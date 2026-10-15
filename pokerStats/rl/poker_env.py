@@ -4,11 +4,12 @@ No-Limit Texas Hold'em environment
 OpenAI Gym-compatible multi-agent poker environment.
 
 Design choices:
-  - Observation:  145-dim vector (hand + board + betting + position + hand strength)
-  - Action space: Discrete(10) — fold, check, call, raise 33/50/75/100/125/150/200%, all_in
+  - Observation:  160-dim vector (hand + board + betting + position + hand strength; layout below)
+  - Action space: Discrete(5) — fold, check, call, raise, all_in; raise size is a separate
+                    continuous fraction in [0, 1] (see raise_frac_to_amount)
   - Reward:       BB-normalized (chips won / big_blind)
   - Info asymmetry: each agent only sees its own hole cards
-  - Supports 2-6 players
+  - Supports up to MAX_PLAYERS (9) seats; the Makefile presets use 2, 3, 6 and 8
 """
 
 import copy

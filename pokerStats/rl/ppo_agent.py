@@ -159,7 +159,7 @@ class AlphaPokerNet(nn.Module):
         self.opponent_encoder = OpponentEncoder(latent_dim=latent_dim)
 
         # Combined input: obs + opponent latents
-        combined_dim = obs_dim + num_opponents * latent_dim  # 145 + 160 = 305
+        combined_dim = obs_dim + num_opponents * latent_dim  # 160 + 8 * 32 = 416
 
         # Trunk
         self.input_proj = nn.Sequential(
