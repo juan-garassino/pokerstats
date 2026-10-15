@@ -51,4 +51,5 @@ class BlueprintTeacher:
 
     @property
     def num_cfr_actions(self) -> int:
+        """Size of the blueprint action space (NUM_CFR_ACTIONS)."""
         return NUM_CFR_ACTIONS

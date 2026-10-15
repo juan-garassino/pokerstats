@@ -1,3 +1,5 @@
+"""pokerStats: No-Limit Hold'em agent (CFR blueprint, PPO self-play, equity engine, live bridges)."""
+
 from os.path import isfile
 from os.path import dirname
 

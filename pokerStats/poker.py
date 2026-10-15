@@ -14,10 +14,21 @@
 
 #  Date Last Modified:2/1/2013
 
-import string, math, random
+"""Standalone 5-card poker hand ranking demo (course exercise, 2013).
+
+Unrelated to the rest of the package: nothing imports it, it uses its own
+rank/suit encoding (ranks 2-14, suits "S" "D" "H" "C"), and calling
+``main()`` runs at import time.
+"""
+
+import random
 
 
 class Card(object):
+    """A playing card; rank is an int 2-14 (14 = ace), suit one of "S", "D", "H", "C".
+
+    Comparison operators look at rank only, so cards of different suits can be equal.
+    """
     RANKS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
 
     SUITS = ("S", "D", "H", "C")
@@ -59,6 +70,7 @@ class Card(object):
 
 
 class Deck(object):
+    """A 52-card deck held as a list of Card objects, dealt from the front."""
     def __init__(self):
         self.deck = []
         for suit in Card.SUITS:
@@ -67,12 +79,14 @@ class Deck(object):
                 self.deck.append(card)
 
     def shuffle(self):
+        """Shuffle the deck in place."""
         random.shuffle(self.deck)
 
     def __len__(self):
         return len(self.deck)
 
     def deal(self):
+        """Remove and return the top card, or None if the deck is empty."""
         if len(self) == 0:
             return None
         else:
@@ -80,6 +94,12 @@ class Deck(object):
 
 
 class Poker(object):
+    """Deals numHands five-card hands and classifies each with the is* methods.
+
+    The is* methods form a chain from best to worst category: each prints its
+    category name and appends a score to ``tlist`` on a match, otherwise calls the
+    next one down. Score = category (1-10) * 13**5 + rank-weighted kickers.
+    """
     def __init__(self, numHands):
         self.deck = Deck()
         self.deck.shuffle()
@@ -94,6 +114,7 @@ class Poker(object):
             self.hands.append(hand)
 
     def play(self):
+        """Print each dealt hand, cards sorted high to low."""
         for i in range(len(self.hands)):
             sortedHand = sorted(self.hands[i], reverse=True)
             hand = ""
@@ -102,6 +123,7 @@ class Poker(object):
             print("Hand " + str(i + 1) + ": " + hand)
 
     def point(self, hand):  # point()function to calculate partial score
+        """Return the base-13 kicker score of a 5-card hand (ranks sorted high to low)."""
         sortedHand = sorted(hand, reverse=True)
         c_sum = 0
         ranklist = []
@@ -119,6 +141,7 @@ class Poker(object):
     def isRoyal(
         self, hand
     ):  # returns the total_point and prints out 'Royal Flush' if true, if false, pass down to isStraightFlush(hand)
+        """Check for Royal Flush; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 10
@@ -140,6 +163,7 @@ class Poker(object):
     def isStraightFlush(
         self, hand
     ):  # returns the total_point and prints out 'Straight Flush' if true, if false, pass down to isFour(hand)
+        """Check for Straight Flush; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 9
@@ -161,6 +185,7 @@ class Poker(object):
     def isFour(
         self, hand
     ):  # returns the total_point and prints out 'Four of a Kind' if true, if false, pass down to isFull()
+        """Check for Four of a Kind; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 8
@@ -183,6 +208,7 @@ class Poker(object):
     def isFull(
         self, hand
     ):  # returns the total_point and prints out 'Full House' if true, if false, pass down to isFlush()
+        """Check for Full House; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 7
@@ -208,6 +234,7 @@ class Poker(object):
     def isFlush(
         self, hand
     ):  # returns the total_point and prints out 'Flush' if true, if false, pass down to isStraight()
+        """Check for Flush; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 6
@@ -225,6 +252,7 @@ class Poker(object):
             self.isStraight(sortedHand)
 
     def isStraight(self, hand):
+        """Check for Straight; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 5
@@ -244,6 +272,7 @@ class Poker(object):
             self.isThree(sortedHand)
 
     def isThree(self, hand):
+        """Check for Three of a Kind; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 4
@@ -266,6 +295,7 @@ class Poker(object):
     def isTwo(
         self, hand
     ):  # returns the total_point and prints out 'Two Pair' if true, if false, pass down to isOne()
+        """Check for Two Pair; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 3
@@ -289,6 +319,7 @@ class Poker(object):
     def isOne(
         self, hand
     ):  # returns the total_point and prints out 'One Pair' if true, if false, pass down to isHigh()
+        """Check for One Pair; on a miss, defer to the next lower category."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 2
@@ -312,6 +343,7 @@ class Poker(object):
             self.isHigh(sortedHand)
 
     def isHigh(self, hand):  # returns the total_point and prints out 'High Card'
+        """Fallback category: print 'High Card' and record the score."""
         sortedHand = sorted(hand, reverse=True)
         flag = True
         h = 1
@@ -324,6 +356,7 @@ class Poker(object):
 
 
 def main():
+    """Prompt for 2-6 hands, deal them, print each category and the winning hand."""
     numHands = eval(input("Enter number of hands to play: "))
     while numHands < 2 or numHands > 6:
         numHands = eval(input("Enter number of hands to play: "))

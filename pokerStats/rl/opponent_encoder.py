@@ -10,7 +10,6 @@ Components:
 import numpy as np
 import torch
 import torch.nn as nn
-import math
 
 from .poker_env import NUM_ACTIONS, Action
 
@@ -30,6 +29,7 @@ class InHandRecorder:
         self.reset()
 
     def reset(self):
+        """Clear all per-seat statistics at the start of a hand."""
         self.action_counts = np.zeros((self.num_players, NUM_ACTIONS), dtype=np.float32)
         self.raise_fracs = [[] for _ in range(self.num_players)]
         self.max_bet_frac = np.zeros(self.num_players, dtype=np.float32)

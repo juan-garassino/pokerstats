@@ -12,11 +12,10 @@ Usage:
 import argparse
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional
 
 from pokerStats.rl.poker_env import (
     PokerEnv, Action, NUM_ACTIONS, OBS_DIM,
-    CARD_IDX, cards_to_onehot, STREETS,
+    cards_to_onehot, STREETS,
     raise_frac_to_amount,
 )
 from pokerStats.rl.ppo_agent import PPOAgent
@@ -239,7 +238,7 @@ class CFRDecisionEngine:
         elif action == Action.ALL_IN:
             return Decision("allin", hero_stack, f"CFR {source}", confidence=0.9)
 
-        return Decision("check", 0.0, f"CFR fallback", confidence=0.5)
+        return Decision("check", 0.0, "CFR fallback", confidence=0.5)
 
 
 if __name__ == "__main__":

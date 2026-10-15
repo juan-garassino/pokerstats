@@ -9,7 +9,7 @@ import numpy as np
 from dataclasses import dataclass
 
 from .poker_env import (
-    Action, NUM_ACTIONS, OBS_DIM, CARD_IDX, cards_to_onehot, STREETS,
+    Action, NUM_ACTIONS, OBS_DIM, cards_to_onehot, STREETS,
     hand_strength, draw_potential, raise_frac_to_amount,
 )
 from .ppo_agent import PPOAgent
@@ -175,6 +175,15 @@ class RLDecisionEngine:
         opponent_profiles: dict,
         available_actions: list,
     ) -> Decision:
+        """Choose an action for the hero from screen-derived state.
+
+        Args:
+            hole_cards, community_cards: card strings such as "Ah".
+            street: "preflop" | "flop" | "turn" | "river".
+            available_actions: UI button names, e.g. ["fold", "call", "raise"].
+
+        Returns a Decision (action, amount, reasoning, confidence).
+        """
         obs  = self._build_obs(hole_cards, community_cards, street,
                                pot, hero_stack, call_amount,
                                position, num_opponents, opponent_profiles)
