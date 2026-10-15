@@ -382,6 +382,7 @@ class KuhnPokerEnv:
         self.reset()
 
     def reset(self):
+        """Shuffle the 3 cards, deal one to each player, and clear history. Returns self."""
         cards = [0, 1, 2]  # J=0, Q=1, K=2
         random.shuffle(cards)
         self.cards = cards[:2]  # one per player
@@ -392,6 +393,7 @@ class KuhnPokerEnv:
         return self
 
     def clone(self):
+        """Return an independent copy (cards, history, rewards) for tree traversal."""
         env = KuhnPokerEnv.__new__(KuhnPokerEnv)
         env.cards = list(self.cards)
         env.history = list(self.history)
@@ -401,11 +403,17 @@ class KuhnPokerEnv:
         return env
 
     def legal_actions(self) -> list:
+        """Return [0, 1] (0 = check/fold, 1 = bet/call), or [] once the hand is over."""
         if self._done:
             return []
         return [0, 1]  # 0=check/fold, 1=bet/call
 
     def step(self, action: int):
+        """Apply action (0 = check/fold, 1 = bet/call).
+
+        Returns:
+            (rewards, done): rewards is {player: payoff}, done is a bool.
+        """
         self.history.append(action)
         h = tuple(self.history)
 
@@ -459,6 +467,7 @@ class KuhnCFRSolver:
         return f"{card_names[card]}|{hist_str}"
 
     def cfr(self, env: KuhnPokerEnv, traverser: int, history: tuple = ()) -> float:
+        """One external-sampling CFR traversal; returns the traverser's expected value."""
         if env._done:
             return env._rewards.get(traverser, 0.0)
 
@@ -490,6 +499,7 @@ class KuhnCFRSolver:
             return self.cfr(child, traverser, history + (a,))
 
     def train(self, n_iterations: int):
+        """Run n_iterations traversals, alternating the traversing player."""
         env = KuhnPokerEnv()
         for i in range(n_iterations):
             traverser = i % 2

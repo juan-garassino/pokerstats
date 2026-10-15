@@ -42,6 +42,7 @@ from .renderer import render_table
 # ── Action encoding ───────────────────────────────────────────────────────────
 # Hybrid discrete-continuous: 5 action types + continuous raise sizing
 class Action(IntEnum):
+    """Discrete action types; RAISE size is chosen separately via raise_frac in [0, 1]."""
     FOLD   = 0
     CHECK  = 1   # only valid when no bet to call
     CALL   = 2
@@ -100,6 +101,10 @@ CARD_IDX  = {c: i for i, c in enumerate(ALL_CARDS)}
 
 
 def cards_to_onehot(cards: list) -> np.ndarray:
+    """Encode card strings (e.g. ["Ah", "Ks"]) as a (52,) float32 multi-hot vector.
+
+    Unknown strings are ignored; index order is ALL_CARDS.
+    """
     v = np.zeros(52, dtype=np.float32)
     for c in cards:
         if c in CARD_IDX:
@@ -176,6 +181,7 @@ def draw_potential(hole_cards: list, community: list) -> float:
 # ── Player state ──────────────────────────────────────────────────────────────
 @dataclass
 class Player:
+    """Per-seat state for one hand (stack, hole cards, bets, fold/all-in flags)."""
     idx:         int
     stack:       float
     hole_cards:  list  = field(default_factory=list)
@@ -187,10 +193,12 @@ class Player:
 
     @property
     def active(self) -> bool:
+        """True if the player has neither folded nor gone all-in."""
         return not self.folded and not self.all_in
 
     @property
     def can_act(self) -> bool:
+        """True if the player is still in the hand and has chips left."""
         return not self.folded and not self.all_in and self.stack > 0
 
 
@@ -303,6 +311,10 @@ class PokerEnv:
 
     # ── Reset ─────────────────────────────────────────────────────────────────
     def reset(self) -> dict:
+        """Start a new hand: shuffle, post blinds, deal hole cards.
+
+        Returns the observation for the first player to act (see `_get_obs`).
+        """
         self.hand_num  += 1
         self.community  = []
         self.pot        = 0.0
@@ -623,6 +635,7 @@ class PokerEnv:
 
     # ── Legal actions ─────────────────────────────────────────────────────────
     def legal_actions(self) -> list:
+        """Return the current player's legal actions as a list of int Action values."""
         p        = self.players[self.current_player]
         call_amt = self._call_amount(self.current_player)
         legal    = []
@@ -813,4 +826,5 @@ class PokerEnv:
         return c
 
     def render(self):
+        """Print the table to stdout using the Unicode renderer."""
         print(self._render_unicode())

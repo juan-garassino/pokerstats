@@ -87,6 +87,7 @@ CFG = {
 
 # ── ELO utilities ─────────────────────────────────────────────────────────────
 def elo_update(winner_elo: float, loser_elo: float, k: float = 32.0) -> tuple:
+    """Standard ELO update; returns (new_winner_elo, new_loser_elo)."""
     expected = 1 / (1 + 10 ** ((loser_elo - winner_elo) / 400))
     delta    = k * (1 - expected)
     return winner_elo + delta, loser_elo - delta
@@ -160,12 +161,14 @@ class ScriptedAgent:
 
 # ── League manager ────────────────────────────────────────────────────────────
 class League:
+    """Pool of frozen agent snapshots used as Phase 2 opponents (weakest evicted at max_size)."""
     def __init__(self, max_size: int = 8):
         self.max_size  = max_size
         self.members:  list = []
         self.elo_hist: list = []
 
     def add(self, agent: PPOAgent, tag: str = ""):
+        """Deep-copy agent into the pool, evicting the lowest-ELO member if over max_size."""
         frozen = copy.deepcopy(agent)
         frozen.net.eval()
         self.members.append({
@@ -182,11 +185,13 @@ class League:
               f"\u2013{max(m['elo'] for m in self.members):.0f}]")
 
     def sample(self) -> PPOAgent:
+        """Uniformly random member, or None if the pool is empty."""
         if not self.members:
             return None
         return random.choice(self.members)["agent"]
 
     def sample_weighted(self) -> PPOAgent:
+        """Member sampled with probability proportional to ELO (shifted to be positive), or None."""
         if not self.members:
             return None
         elos   = np.array([m["elo"] for m in self.members], dtype=float)
@@ -668,6 +673,7 @@ class MultiAgentTrainer:
 
     # ── Main training loop ────────────────────────────────────────────────
     def train(self):
+        """Run the 3-phase curriculum (self-play, league, archetypes) configured by self.cfg."""
         dline = "\u2550" * 70
         print(f"\n{dline}")
         print("  AlphaPoker Multi-Agent Training")

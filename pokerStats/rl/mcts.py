@@ -31,11 +31,13 @@ class MCTSNode:
 
     @property
     def q_value(self) -> float:
+        """Mean backed-up value; 0.0 for an unvisited node."""
         if self.visit_count == 0:
             return 0.0
         return self.value_sum / self.visit_count
 
     def ucb_score(self, c_puct: float = 1.5) -> float:
+        """PUCT score (q_value + prior-weighted exploration bonus); 0.0 at the root."""
         if self.parent is None:
             return 0.0
         exploration = c_puct * self.prior * math.sqrt(self.parent.visit_count) / \
@@ -43,15 +45,18 @@ class MCTSNode:
         return self.q_value + exploration
 
     def best_child(self, c_puct: float = 1.5) -> 'MCTSNode':
+        """Return the child with the highest PUCT score."""
         return max(self.children.values(), key=lambda c: c.ucb_score(c_puct))
 
     def expand(self, action_priors: dict):
+        """Add a child per {action: prior} entry that does not already exist."""
         for action, prior in action_priors.items():
             if action not in self.children:
                 self.children[action] = MCTSNode(parent=self, action=action,
                                                   prior=prior)
 
     def backup(self, value: float):
+        """Propagate value to the root, negating it at each level (two-player view)."""
         node = self
         while node is not None:
             node.visit_count += 1

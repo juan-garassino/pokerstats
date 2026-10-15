@@ -40,6 +40,7 @@ class ResBlock(nn.Module):
         )
 
     def forward(self, x):
+        """x: (batch, dim) float32 -> (batch, dim)."""
         return F.relu(x + self.net(x))
 
 
@@ -88,6 +89,11 @@ class PokerNet(nn.Module):
         return x
 
     def forward(self, obs: torch.Tensor, legal_mask: Optional[torch.Tensor] = None):
+        """obs: (batch, OBS_DIM) float32; legal_mask: (batch, NUM_ACTIONS) bool or None.
+
+        Returns (logits (batch, NUM_ACTIONS) with illegal actions at -inf,
+        raise_alpha (batch,), raise_beta (batch,), value (batch,)).
+        """
         x = self._trunk(obs)
 
         logits = self.actor(x)
@@ -104,6 +110,11 @@ class PokerNet(nn.Module):
 
     def act(self, obs: torch.Tensor, legal_mask: Optional[torch.Tensor] = None,
             deterministic: bool = False) -> tuple:
+        """Sample an action and raise fraction (argmax / Beta mean if deterministic).
+
+        Returns (action (batch,) int64, raise_frac (batch,) in [0, 1], log_prob (batch,),
+        value (batch,), entropy (batch,)). log_prob includes the Beta term only for RAISE.
+        """
         logits, raise_alpha, raise_beta, value = self.forward(obs, legal_mask)
 
         action_dist = Categorical(logits=logits)
@@ -336,6 +347,13 @@ class AlphaPokerNet(nn.Module):
 
 # ── PPO rollout buffer ────────────────────────────────────────────────────────
 class RolloutBuffer:
+    """Fixed-capacity on-policy buffer for PPO.
+
+    Arrays are preallocated numpy: obs (capacity, obs_dim) float32, actions (capacity,)
+    int64, legal_masks (capacity, num_actions) bool, opp_events
+    (capacity, num_opponents, max_seq_len, event_dim) float32, cfr_targets
+    (capacity, NUM_CFR_ACTIONS) float32.
+    """
     def __init__(self, capacity: int, obs_dim: int = OBS_DIM,
                  num_actions: int = NUM_ACTIONS,
                  num_opponents: int = MAX_PLAYERS - 1, max_seq_len: int = MAX_SEQ_LEN,
@@ -371,6 +389,10 @@ class RolloutBuffer:
     def add(self, obs, action, raise_frac, log_prob, reward, value, done,
             legal_mask, opp_events=None, opp_masks=None,
             cfr_target=None, has_cfr=False):
+        """Store one transition at the write pointer (wraps around at capacity).
+
+        obs: (obs_dim,), legal_mask: (num_actions,) bool, cfr_target: (NUM_CFR_ACTIONS,).
+        """
         i = self.ptr % self.capacity
         self.obs[i]         = obs
         self.actions[i]     = action
@@ -413,6 +435,12 @@ class RolloutBuffer:
         return returns, advantages
 
     def get_batches(self, batch_size: int, gamma: float = 0.99, gae_lambda: float = 0.95):
+        """Yield shuffled minibatches as a 16-tuple of tensors (leading dim <= batch_size).
+
+        Order: obs, actions, raise_fracs, old log_probs, returns, normalized advantages,
+        legal_masks, opp_events, opp_masks, showdown_cards, has_showdown, old values,
+        next_actions, has_next_action, cfr_targets, has_cfr_target.
+        """
         returns, advantages = self.compute_returns(gamma, gae_lambda)
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -439,12 +467,18 @@ class RolloutBuffer:
             )
 
     def reset(self):
+        """Rewind the write pointer; stored data is overwritten, not cleared."""
         self.ptr  = 0
         self.full = False
 
 
 # ── PPO trainer ───────────────────────────────────────────────────────────────
 class PPOAgent:
+    """PPO agent wrapping PokerNet (use_alpha=False) or AlphaPokerNet (use_alpha=True).
+
+    Handles action selection with legal-action masking, PPO updates (with optional
+    auxiliary and CFR-distillation losses), and checkpoint save/load.
+    """
     def __init__(
         self,
         obs_dim:      int   = OBS_DIM,
@@ -769,6 +803,7 @@ class PPOAgent:
         return metrics
 
     def save(self, path: str):
+        """Write network + optimizer state, train_steps, elo and use_alpha to a .pt file."""
         torch.save({
             "net_state":   self.net.state_dict(),
             "optim_state": self.optimizer.state_dict(),
@@ -779,6 +814,7 @@ class PPOAgent:
         print(f"  Saved checkpoint -> {path}")
 
     def load(self, path: str):
+        """Restore network, optimizer, train_steps and elo from a file written by save()."""
         ckpt = torch.load(path, map_location=self.device, weights_only=False)
         self.net.load_state_dict(ckpt["net_state"])
         self.optimizer.load_state_dict(ckpt["optim_state"])
