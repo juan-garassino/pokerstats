@@ -1,284 +1,209 @@
 # PokerStats AI
 
-Autonomous poker agent that learns No-Limit Hold'em through self-play reinforcement learning with GTO (Game Theory Optimal) knowledge distillation.
+No-Limit Hold'em research code: a Monte Carlo CFR blueprint solver, a PPO self-play
+agent with an opponent-history encoder and optional CFR distillation, a Gym-style
+poker environment, and a pure-Python equity engine.
 
-## What it does
+**Status.** Work in progress. The environment, solvers, agent and tests run on CPU.
+The repository contains no benchmark results or trained-strength evaluations, so none
+are claimed here. Screen-reading code for live play (YOLO + OCR) exists only under
+`reference/` and is not wired into the `pokerStats` package; `pokerStats/vision/` is an
+empty placeholder.
 
-1. **Trains a CFR blueprint** — solves a simplified poker game tree via Monte Carlo Counterfactual Regret Minimization to produce near-Nash equilibrium strategies
-2. **Trains a neural network via PPO self-play** — an AlphaPokerNet learns by playing against itself across 6 seats with shared weights
-3. **Distills CFR into the network** — the blueprint's GTO strategies are used as a teaching signal so the network internalizes game-theory-optimal play as its baseline
-4. **Exploits opponents** — an opponent encoder tracks player tendencies (VPIP, PFR, bluff frequency) and learns to deviate from GTO against exploitable players
-5. **Plays live on PokerStars** — reads the screen via YOLO card detection + OCR, makes decisions, and controls the UI with human-like timing
+## Contents
 
-## Architecture
-
-```
-AlphaPokerNet
-├── Opponent Encoder (Transformer) — per-seat history → latent vector
-├── Shared Trunk (3 ResBlocks, 256 hidden)
-├── Policy Head — 5 discrete actions (fold/check/call/raise/all-in)
-├── Raise Head — Beta distribution for continuous raise sizing [0,1]
-├── Value Head — scalar state value estimate
-├── CFR Head — 7-dim blueprint strategy prediction (distillation)
-└── Auxiliary Heads (training only)
-    ├── Card Predictor — predict opponent hole cards from history
-    ├── Action Predictor — predict opponent's next action
-    └── Range Head — estimate opponent hand ranges
-```
-
-## Training modes
-
-| Mode | Command | What it produces | Use case |
-|------|---------|-----------------|----------|
-| **Unified** | `make train-unified-colab` | Single network with internalized GTO | Best overall agent |
-| **Hybrid** | `make train-hybrid` | Separate CFR table + PPO network | Two-system fallback |
-| **Pure PPO** | `make train-colab` | PPO network only | Fast iteration |
-
-### Unified training pipeline
-
-```
-CFR (CPU)                          PPO + Distillation (GPU)
-┌─────────────────────┐           ┌──────────────────────────────┐
-│ Hand Abstraction    │           │ Phase 1: Self-play           │
-│ 169 preflop buckets │           │   cfr_coef = 1.0 (learn GTO)│
-│ k-means postflop    │           │                              │
-│         ↓           │           │ Phase 2: League play         │
-│ MCCFR Solving       │──blueprint──▶ cfr_coef = 0.3 (blend)    │
-│ External sampling   │           │                              │
-│         ↓           │           │ Phase 3: Archetypes          │
-│ Blueprint Extraction│           │   cfr_coef = 0.1 (exploit)  │
-└─────────────────────┘           └──────────────────────────────┘
-                                            ↓
-                                    checkpoints/best.pt
-                                   (single file, deploys anywhere)
-```
+- [Quick start](#quick-start)
+- [What is in the package](#what-is-in-the-package)
+- [Network architecture](#network-architecture)
+- [Training pipeline](#training-pipeline)
+- [Make targets](#make-targets)
+- [Data types and conventions](#data-types-and-conventions)
+- [Outputs](#outputs)
+- [Known issues](#known-issues)
 
 ## Quick start
 
-### Install
+Requires Python 3.12+ (`.python-version`). The tests and demos were run with only a
+subset of the dependencies in `pyproject.toml`: `torch` (CPU build), `numpy`,
+`gymnasium`, `treys`, `scipy`, `scikit-learn`, `pytest`.
 
 ```bash
-pip install -r requirements.txt
+uv venv && source .venv/bin/activate
+uv pip install torch numpy gymnasium treys scipy scikit-learn pytest
+
+python -m pytest tests -q          # 111 tests, about 2 minutes on CPU
+PYTHONPATH=. python scripts/demo_play.py --hands 1 --delay 0   # random agent, 3 players
 ```
 
-### Run tests
+`uv sync` installs the full `pyproject.toml` list (including `mlflow`, `jupyterlab` and
+cloud clients); it was not run for this README.
 
-```bash
-make test
-```
+The scripts import `pokerStats` directly, so run them from the repo root with
+`PYTHONPATH=.` or install the package first (`pip install .`). The `make demo*` targets
+call `python scripts/...` without setting a path and assume the package is installed.
 
-### Watch a demo (no training needed)
-
-```bash
-make demo                     # random agent, 3 players
-make demo-6max                # random agent, 6 players
-make demo-vs-maniac           # random agent vs maniac bot
-```
-
-### Train on Google Colab
-
-CFR runs on CPU and PPO runs on GPU. Train them separately to avoid paying for GPU during CFR.
-
-```bash
-# 0. Package the repo (run locally)
-make zip-repo
-```
-
-**Step 1 — CFR on CPU instance (no GPU needed)**
+Equity example (from `pokerStats/CLAUDE.md`, output verified):
 
 ```python
-# Upload pokerStats-repo.zip, then:
-!unzip pokerStats-repo.zip
-!pip install -r requirements.txt
-!make cfr-cpu NUM_PLAYERS=6         # ~30 min on CPU
-
-# Download the blueprint
-!make zip-output
-files.download('pokerStats-output.zip')
+from pokerStats.equity import monte_carlo_equity
+r = monte_carlo_equity(["As", "Ac"], num_opponents=1,
+                       opponent_range={"KK"}, iterations=20_000, seed=7)
+r.equity   # 0.8155 with this seed (AA vs KK preflop)
 ```
 
-**Step 2 — PPO on GPU instance (needs blueprint from step 1)**
-
-```python
-# Upload pokerStats-repo.zip AND pokerStats-output.zip, then:
-!unzip pokerStats-repo.zip
-!unzip pokerStats-output.zip        # restores checkpoints/cfr/
-!pip install -r requirements.txt
-!make ppo-gpu NUM_PLAYERS=6         # ~1-2 hours on GPU
-
-# Download trained network
-!make zip-output
-files.download('pokerStats-output.zip')
-```
-
-**Or all-in-one (single instance with GPU)**
-
-```bash
-!make train-unified-colab NUM_PLAYERS=6
-```
-
-| Size | CFR | PPO | Time (Colab) | Human equivalent |
-|------|-----|-----|-------------|-----------------|
-| **XXS** | `cfr-xxs` 100 iters | `ppo-xxs` 2k hands | ~5 min | **Pipeline test** — verifies everything runs end-to-end, learns nothing |
-| **XS** | `cfr-xs` 1k iters | `ppo-xs` 20k hands | ~1h | **Drunk tourist** — knows the rules, folds or calls randomly, occasionally stumbles into a win |
-| **S** | `cfr-s` 3k iters | `ppo-s` 50k hands | ~4h | **Home game regular** — understands position and pot odds, won't throw away strong hands, but bluffs poorly and overplays medium holdings |
-| **M** | `cfr-m` 10k iters | `ppo-m` 90k hands | ~12h | **Casino 1/2 NL grinder** — solid TAG style, knows when to fold, sizes bets reasonably, exploits obvious fish. Profitable at low stakes |
-| **L** | `cfr-l` 50k iters | `ppo-l` 300k hands | ~4 days | **Online 200NL regular** — near-GTO preflop, balanced bluff/value ranges, adjusts to opponents. Beats most live players convincingly |
-| **XL** | `cfr-xl` 250k iters | `ppo-xl` 500k hands | ~2 weeks | **High-stakes reg** — strong GTO baseline with precise exploits, balanced across all streets, very hard to read |
-| **XXL** | `cfr-xxl` 500k iters | `ppo-xxl` 700k hands | Weeks+ | **Nosebleed pro** — near-perfect GTO, surgical exploitation, crushes anything below the highest stakes |
-
-> Benchmark: ~0.5 iter/s on Colab CPU. All-in-one: `make train-s NUM_PLAYERS=6`
->
-> CFR runs on CPU, PPO runs on GPU. Run them separately to save costs (see workflow below).
-
-### Watch a trained agent play
-
-```bash
-make demo-trained                  # vs fish
-make demo-trained-search           # with MCTS lookahead
-```
-
-## Project structure
+## What is in the package
 
 ```
 pokerStats/
-├── rl/                        # Reinforcement learning
-│   ├── poker_env.py           # NLHE Gym environment (2-9 players)
-│   ├── ppo_agent.py           # AlphaPokerNet + PPO trainer + CFR distillation
-│   ├── self_play_trainer.py   # Multi-agent training loop (3-phase curriculum)
-│   ├── opponent_encoder.py    # Transformer encoder for opponent histories
-│   ├── mcts.py                # Monte Carlo Tree Search for lookahead
+├── rl/
+│   ├── poker_env.py           # NLHE Gym environment, up to 9 seats (OBS_DIM = 160)
+│   ├── ppo_agent.py           # PokerNet, AlphaPokerNet, RolloutBuffer, PPOAgent
+│   ├── self_play_trainer.py   # 3-phase curriculum, League, ScriptedAgent archetypes
+│   ├── opponent_encoder.py    # Transformer encoder over per-seat action history
+│   ├── mcts.py                # PokerMCTS lookahead
 │   ├── renderer.py            # Unicode terminal rendering
-│   └── rl_live_bridge.py      # Load checkpoint → live play
-│
-├── cfr/                       # Counterfactual Regret Minimization
-│   ├── abstraction.py         # Hand bucketing (preflop 169 + postflop k-means)
-│   ├── cfr_solver.py          # External sampling MCCFR solver
-│   ├── blueprint.py           # Compressed strategy table extraction
-│   ├── distillation.py        # BlueprintTeacher for training-time targets
-│   ├── hybrid_agent.py        # Blended CFR+PPO agent (inference)
+│   └── rl_live_bridge.py      # Checkpoint -> Decision for a screen-derived state
+├── cfr/
+│   ├── abstraction.py         # Hand bucketing (169 preflop + k-means postflop)
+│   ├── cfr_solver.py          # External-sampling MCCFR (+ Kuhn poker test solver)
+│   ├── blueprint.py           # Strategy table extraction, save/load (.npz)
+│   ├── distillation.py        # BlueprintTeacher: CFR targets for PPO training
+│   ├── hybrid_agent.py        # Blended CFR + PPO agent (inference)
 │   ├── subgame_solver.py      # Real-time subgame refinement
-│   └── cfr_live_bridge.py     # CFR decision engine for live play
-│
-├── equity/                    # Monte Carlo equity engine (pure Python, stdlib only)
-│   ├── cards.py               # Deck vocabulary + two-card range notation
-│   ├── evaluator.py           # Dependency-free 5..7-card hand evaluator
-│   ├── preflop.py             # 169-hand equity table + top-X% range modelling
-│   └── montecarlo.py          # Range-aware equity simulator → EquityResult
-│
-├── vision/                    # Screen capture + YOLO detection (WIP)
-│
-├── reference/                 # Target architecture (read-only)
-│
-├── scripts/                   # Training & evaluation scripts
-│   ├── train_cfr.py           # CFR training CLI
-│   ├── demo_play.py           # Interactive demo viewer
-│   └── eval_rl.py             # Agent evaluation
-│
-└── tests/                     # Test suite (95 tests)
+│   └── cfr_live_bridge.py     # CFR decision engine for a screen-derived state
+├── equity/                    # Monte Carlo equity, stdlib only (no treys/NumPy)
+├── poker.py                   # Unrelated standalone 5-card ranking exercise
+└── vision/                    # Placeholder
+scripts/    demo_play.py, eval_rl.py, train_cfr.py
+tests/      10 files, 111 tests
+reference/  Read-only target architecture (not imported by the package)
+notebooks/  Exploratory notebooks (train_rl, statistics, Untitled)
 ```
 
-## Make targets reference
+## Network architecture
 
-### Training
+`AlphaPokerNet` in `pokerStats/rl/ppo_agent.py`:
 
-| Size | CPU step | GPU step | All-in-one | Human equivalent |
-|------|----------|----------|------------|-----------------|
-| XXS | `cfr-xxs` (~3 min) | `ppo-xxs` | `train-xxs` | Pipeline test |
-| XS | `cfr-xs` (~35 min) | `ppo-xs` | `train-xs` | Drunk tourist |
-| S | `cfr-s` (~2.5h) | `ppo-s` | `train-s` | Home game regular |
-| M | `cfr-m` (~8h) | `ppo-m` | `train-m` | Casino 1/2 grinder |
-| L | `cfr-l` (~3 days) | `ppo-l` | `train-l` | Online 200NL reg |
-| XL | `cfr-xl` (~2 weeks) | `ppo-xl` | `train-xl` | High-stakes reg |
-| XXL | `cfr-xxl` (weeks+) | `ppo-xxl` | `train-xxl` | Nosebleed pro |
+```
+obs (160) + 8 opponent latents (8 x 32) -> 416
+  Opponent encoder (Transformer, shared across seats)
+  Trunk: Linear + LayerNorm, then 3 residual blocks, 256 hidden
+  Heads
+    actor        5 logits (fold / check / call / raise / all-in), legal-action masked
+    raise        Beta(alpha, beta) for raise size in [0, 1]
+    critic       scalar value
+    cfr          7-way blueprint strategy prediction (distillation)
+  Auxiliary (training only)
+    card predictor (52 per opponent), action predictor (5 per opponent),
+    range head (8 x 52)
+```
 
-All accept `NUM_PLAYERS=6`. Pure PPO without distillation: `make train-colab`.
+`PokerNet` is the older network without opponent encoding, kept for old checkpoints.
 
-### Demos
+## Training pipeline
 
-| Target | Description |
-|--------|-------------|
-| `demo` | Random agent, 3 players |
-| `demo-6max` | Random agent, 6 players |
-| `demo-vs-maniac` | Random agent vs maniac bot |
-| `demo-vs-nit` | Random agent vs nit bot |
-| `demo-trained` | Trained agent vs fish |
-| `demo-trained-search` | Trained agent with MCTS |
+1. **CFR (CPU).** Build the hand abstraction, run MCCFR, extract a blueprint
+   (`scripts/train_cfr.py --phase abstraction|solve|blueprint`).
+2. **PPO self-play (GPU recommended).** `MultiAgentTrainer` runs three phases;
+   with a `BlueprintTeacher` it adds a distillation loss weighted by
+   `cfr_coef_phase{1,2,3}` (defaults 1.0, 0.3, 0.1 in `CFG`).
 
-### Packaging
+| Phase | Opponents | Default hands in `CFG` | Makefile default |
+|-------|-----------|------------------------|------------------|
+| 1 | Self-play, all seats share weights | 30,000 | 20,000 |
+| 2 | League of frozen snapshots (max 8, ELO-based) | 200,000 | 50,000 |
+| 3 | Scripted archetypes (nit, fish, maniac, tight-aggressive) | 70,000 | 20,000 |
 
-| Target | Description |
-|--------|-------------|
-| `zip-repo` | Zip source code for Colab upload |
-| `zip-output` | Zip checkpoints + data for download |
+Size presets (`Makefile`; PPO hands are summed over the three phases):
 
-### Configurable variables
+| Size | CFR iterations | PPO hands |
+|------|----------------|-----------|
+| XXS | 100 | 2,000 |
+| XS | 1,000 | 20,000 |
+| S | 3,000 | 50,000 |
+| M | 10,000 | 90,000 |
+| L | 50,000 | 300,000 |
+| XL | 250,000 | 500,000 |
+| XXL | 500,000 | 700,000 |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NUM_PLAYERS` | 6 | Table size (2-9) |
-| `PHASE1_HANDS` | 20000 | Self-play hands |
-| `PHASE2_HANDS` | 50000 | League play hands |
-| `PHASE3_HANDS` | 20000 | Archetype fine-tune hands |
-| `RENDER_EVERY` | 5000 | Render table every N hands |
-| `CFR_ITERS` | 5000 | MCCFR iterations |
-| `CFR_BUCKETS` | 50 | Postflop abstraction buckets |
-| `USE_CFR` | 0 | Enable CFR distillation (0/1) |
+The only timing figure in the repo is a Makefile comment: about 0.5 CFR iterations/s
+on a Colab CPU. No other run times are recorded.
 
-Example: `make train-colab NUM_PLAYERS=3 PHASE1_HANDS=10000 RENDER_EVERY=1000`
+## Make targets
 
-## Key data types
+Run `make -n <target>` to see what a target does. Training targets need a GPU or a lot
+of patience; `cfr-xxs` followed by `ppo-xxs` is the smallest end-to-end pipeline check.
 
-### Action space
+| Group | Targets |
+|-------|---------|
+| Tests | `test` (needs `coverage`), `cfr-test`, `cfr-test-kuhn` |
+| PPO only | `train`, `train-render`, `train-colab`, `train-colab-quick`, `train-colab-full`, `train-colab-{2,3,6,8}max` |
+| CFR + PPO | `train-hybrid`, `train-unified` (distillation), and `-quick` / `-6max` / `-8max` variants |
+| By size | `cfr-<size>`, `ppo-<size>`, `train-<size>` for xxs, xs, s, m, l, xl, xxl |
+| Demos | `demo`, `demo-6max`, `demo-search`, `demo-vs-maniac`, `demo-vs-nit`, `demo-vs-tag`, `demo-trained`, `demo-trained-search` |
+| Eval | `eval-rl`, `eval-rl-legacy` |
+| Packaging | `zip-repo`, `zip-output`, `zip-cfr`, `zip-ppo` |
+
+`demo-trained*` expect `checkpoints/best.pt`, which is not in the repo.
+Variables: `NUM_PLAYERS` (6), `PHASE1_HANDS` / `PHASE2_HANDS` / `PHASE3_HANDS`,
+`RENDER_EVERY` (5000), `USE_CFR` (0), `CFR_ITERS` (5000), `CFR_BUCKETS` (50),
+`CFR_SAMPLES` (1000). Example:
+`make train-colab NUM_PLAYERS=3 PHASE1_HANDS=10000 RENDER_EVERY=1000`.
+
+Split CPU/GPU run on Colab: `make zip-repo`, then `make cfr-<size>` on a CPU instance,
+`make zip-output` (or `zip-cfr`), and `make ppo-<size>` on a GPU instance.
+
+## Data types and conventions
 
 ```python
 class Action(IntEnum):
-    FOLD   = 0
-    CHECK  = 1
-    CALL   = 2
-    RAISE  = 3   # continuous sizing via raise_frac in [0, 1]
+    FOLD = 0; CHECK = 1; CALL = 2
+    RAISE = 3     # size from raise_frac in [0, 1]
     ALL_IN = 4
 ```
 
-Raise sizing is continuous: the network outputs a Beta distribution over `[0, 1]` which maps to `[min_raise, max_raise]` via an exponential curve.
+`raise_frac_to_amount` maps `[0, 1]` to `[min_raise, max_raise]` with
+`(e^(3f) - 1) / (e^3 - 1)`.
 
-### Observation vector (145-dim)
+Observation layout (`OBS_DIM = 160`, padded to 9 seats; empty seats are zero):
 
 | Slice | Content |
 |-------|---------|
 | `[0:52]` | Hero hole cards (one-hot) |
 | `[52:104]` | Community cards (one-hot) |
-| `[104:128]` | Per-player stacks, bets, active flags, positions |
-| `[128:136]` | Pot, call amount, min raise, street one-hot |
-| `[136:143]` | Recent action history |
-| `[143:145]` | Hand strength, draw potential |
+| `[104:113]` | Stacks, normalized (9 slots) |
+| `[113:122]` | Current bets, normalized |
+| `[122:131]` | Active flags |
+| `[131:140]` | Positions relative to the dealer |
+| `[140:144]` | Pot, call amount, min raise, active players |
+| `[144:148]` | Street one-hot |
+| `[148:155]` | Last 7 actions (id / `NUM_ACTIONS`) |
+| `[155]`, `[156]` | Hand strength, draw potential |
+| `[157:160]` | Raises this street / max, facing-raise flag, pot odds |
 
-### Card notation
-
-- Ranks: `2 3 4 5 6 7 8 9 T J Q K A` (T = ten)
-- Suits: `c d h s` (clubs, diamonds, hearts, spades)
-- Examples: `Ah` (ace of hearts), `Tc` (ten of clubs), `2s` (two of spades)
-
-## Training curriculum
-
-| Phase | Hands | Opponents | CFR coef | Goal |
-|-------|-------|-----------|----------|------|
-| 1 | 20k-50k | Self-play (all 6 seats) | 1.0 | Learn GTO baseline |
-| 2 | 50k-200k | League (frozen checkpoints) | 0.3 | Robustness + diversity |
-| 3 | 20k-50k | Scripted archetypes (nit/fish/maniac/TAG) | 0.1 | Exploit real humans |
+Cards are `"<rank><suit>"`, ranks `23456789TJQKA` (`T` = ten), suits `cdhs`, for example
+`"Ah"`, `"Tc"`, `"2s"`. Money is float dollars.
 
 ## Outputs
 
-After training, `checkpoints/` contains:
+Written to `checkpoints/` (listed in `.gitignore`):
 
 | File | Description |
 |------|-------------|
-| `best.pt` | Best PPO checkpoint (by ELO) |
-| `final.pt` | Final checkpoint after all phases |
+| `best.pt` | Best PPO checkpoint by ELO |
+| `final.pt` | Final checkpoint |
 | `ckpt_hand_XXXXXXXX.pt` | Periodic checkpoints |
-| `cfr/blueprint.npz` | CFR blueprint strategies |
-| `cfr/abstraction.npz` | Hand abstraction centroids |
-| `cfr/solver_final.npz` | Raw CFR solver state |
+| `cfr/blueprint.npz`, `cfr/abstraction.npz`, `cfr/solver_final.npz` | CFR artifacts |
+
+## Known issues
+
+- `pokerStats/rl/rl_live_bridge.py` builds observations with an older 145-dim slice
+  layout that does not match `poker_env.py` (160 dims).
+- `tests/test_renderer.py::test_render_table_output` fails (asserts `"Pot"`, renderer
+  prints `pot`).
+- `tests/test_hybrid_agent.py::test_blueprint_strategy_lookup` is occasionally flaky
+  (unseeded solver, tight float tolerance).
+- Running the tests overwrites the tracked `checkpoints/final.pt`.
 
 ## License
 
