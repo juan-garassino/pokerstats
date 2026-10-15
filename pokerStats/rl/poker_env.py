@@ -15,7 +15,6 @@ import copy
 import random
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Optional
 from enum import IntEnum
 
 try:
@@ -37,7 +36,7 @@ try:
 except ImportError:
     TREYS_OK = False
 
-from .renderer import render_table, render_hand
+from .renderer import render_table
 
 
 # ── Action encoding ───────────────────────────────────────────────────────────

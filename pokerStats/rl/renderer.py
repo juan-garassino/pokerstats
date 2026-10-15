@@ -55,7 +55,7 @@ def render_hand(cards: list, hidden: bool = False, label: str = "") -> str:
     prefix = f"{BOLD}{label}{RESET}  " if label else ""
 
     if hidden:
-        glyphs = f"  ".join(CARD_BACK for _ in cards)
+        glyphs = "  ".join(CARD_BACK for _ in cards)
     else:
         glyphs = "  ".join(
             f"{SUIT_COLOR.get(c[1], '')}{card_unicode(c)}{RESET}" for c in cards

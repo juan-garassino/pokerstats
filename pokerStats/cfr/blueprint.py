@@ -10,7 +10,7 @@ Target: <500MB on disk using float16 compression.
 import numpy as np
 from typing import Optional
 
-from .cfr_solver import CFRSolver, InfoSet, NUM_CFR_ACTIONS
+from .cfr_solver import CFRSolver, NUM_CFR_ACTIONS
 
 
 class BlueprintStrategy:

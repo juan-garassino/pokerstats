@@ -5,7 +5,7 @@ Supports both legacy PPO and AlphaPoker agents.
 """
 import numpy as np
 from collections import deque
-from pokerStats.rl import PokerEnv, NUM_ACTIONS
+from pokerStats.rl import PokerEnv
 from pokerStats.rl.ppo_agent import PPOAgent, RolloutBuffer
 from pokerStats.rl.self_play_trainer import ScriptedAgent, MultiAgentTrainer, CFG
 

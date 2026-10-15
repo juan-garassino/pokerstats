@@ -14,13 +14,12 @@ import random
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Optional
-from pathlib import Path
 
 # Deep raise-reraise sequences can exceed default recursion limit
 sys.setrecursionlimit(10_000)
 
 from pokerStats.rl.poker_env import (
-    PokerEnv, Action, NUM_ACTIONS, STREETS,
+    PokerEnv, Action, STREETS,
 )
 from .abstraction import HandAbstraction
 

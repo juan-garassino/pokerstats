@@ -18,18 +18,14 @@ Usage:
 import argparse
 import os
 import time
-import random
 import numpy as np
-from pathlib import Path
-from collections import deque
 
 from pokerStats.cfr.abstraction import HandAbstraction
 from pokerStats.cfr.cfr_solver import (
     CFRSolver, NUM_CFR_ACTIONS, cfr_to_env_action, env_legal_to_cfr_mask,
 )
 from pokerStats.cfr.blueprint import BlueprintStrategy
-from pokerStats.rl.poker_env import PokerEnv, Action, STREETS
-from pokerStats.rl.renderer import render_training_stats
+from pokerStats.rl.poker_env import PokerEnv, STREETS
 
 
 # ── ANSI colors (same as renderer.py) ───────────────────────────────────────

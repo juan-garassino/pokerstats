@@ -10,9 +10,8 @@ Postflop: Equity histogram clustering via k-means (~200 buckets per street)
 import random
 import numpy as np
 from itertools import combinations
-from pathlib import Path
 
-from pokerStats.rl.poker_env import RANKS, SUITS, ALL_CARDS, CARD_IDX, hand_strength
+from pokerStats.rl.poker_env import RANKS, ALL_CARDS, hand_strength
 
 try:
     from treys import Card, Evaluator

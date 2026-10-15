@@ -5,11 +5,11 @@ Supports --search flag for MCTS-enhanced decisions.
 """
 import argparse
 import time
-from pokerStats.rl import PokerEnv, Action, NUM_ACTIONS
+from pokerStats.rl import PokerEnv, Action
 from pokerStats.rl.ppo_agent import PPOAgent
 from pokerStats.rl.self_play_trainer import ScriptedAgent
-from pokerStats.rl.poker_env import hand_strength, draw_potential, raise_frac_to_amount
-from pokerStats.rl.renderer import BOLD, RESET, GREEN, YELLOW, RED, GRAY, BLUE
+from pokerStats.rl.poker_env import raise_frac_to_amount
+from pokerStats.rl.renderer import BOLD, RESET, GREEN, YELLOW, RED, GRAY
 
 
 ACTION_NAMES = {0: "FOLD", 1: "CHECK", 2: "CALL", 3: "RAISE", 4: "ALL-IN"}
@@ -60,7 +60,7 @@ def demo(n_hands=10, delay=0.8, checkpoint=None, opponent_style="fish",
     print(f"\n  {sep}")
     print(f"  {label}")
     print(f"  Opponents: {num_players - 1}x {opponent_style}")
-    print(f"  Actions: FOLD / CHECK / CALL / RAISE (continuous) / ALL-IN")
+    print("  Actions: FOLD / CHECK / CALL / RAISE (continuous) / ALL-IN")
     print(f"  Hands: {n_hands}")
     print(f"  {sep}\n")
 

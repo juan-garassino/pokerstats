@@ -18,8 +18,8 @@ from pathlib import Path
 from collections import deque
 
 from .poker_env import PokerEnv, Action, NUM_ACTIONS
-from .ppo_agent import PPOAgent, RolloutBuffer, AlphaPokerNet
-from .opponent_encoder import InHandRecorder, EVENT_DIM, MAX_SEQ_LEN, LATENT_DIM
+from .ppo_agent import PPOAgent, RolloutBuffer
+from .opponent_encoder import InHandRecorder, EVENT_DIM, MAX_SEQ_LEN
 from .renderer import render_training_stats
 
 
@@ -670,7 +670,7 @@ class MultiAgentTrainer:
     def train(self):
         dline = "\u2550" * 70
         print(f"\n{dline}")
-        print(f"  AlphaPoker Multi-Agent Training")
+        print("  AlphaPoker Multi-Agent Training")
         print(f"  Device: {self.agent.device}")
         total = self.cfg['phase1_hands'] + self.cfg['phase2_hands'] + self.cfg['phase3_hands']
         # Auto-set temperature anneal to 50% of total hands if not specified
@@ -679,12 +679,12 @@ class MultiAgentTrainer:
         print(f"  Total hands: {total:,}")
         print(f"  Seats: {self.num_players} (all learning, shared weights)")
         if self.blueprint_teacher is not None:
-            print(f"  CFR distillation: ENABLED (blueprint loaded)")
+            print("  CFR distillation: ENABLED (blueprint loaded)")
             print(f"    Phase 1 cfr_coef={self.cfg.get('cfr_coef_phase1', 1.0)}")
             print(f"    Phase 2 cfr_coef={self.cfg.get('cfr_coef_phase2', 0.3)}")
             print(f"    Phase 3 cfr_coef={self.cfg.get('cfr_coef_phase3', 0.1)}")
         else:
-            print(f"  CFR distillation: disabled (pure PPO)")
+            print("  CFR distillation: disabled (pure PPO)")
         print(f"{dline}\n")
 
         phase_schedule = [
@@ -798,7 +798,7 @@ def main():
     if args.blueprint and args.abstraction:
         from pokerStats.cfr.distillation import BlueprintTeacher
         teacher = BlueprintTeacher(args.blueprint, args.abstraction)
-        print(f"  Loaded blueprint teacher for CFR distillation")
+        print("  Loaded blueprint teacher for CFR distillation")
 
     trainer = MultiAgentTrainer(CFG, blueprint_teacher=teacher)
 

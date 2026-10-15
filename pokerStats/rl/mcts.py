@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from typing import Optional
 
-from .poker_env import PokerEnv, Action, NUM_ACTIONS, ALL_CARDS, CARD_IDX
+from .poker_env import PokerEnv, NUM_ACTIONS, ALL_CARDS, CARD_IDX
 
 
 class MCTSNode:

@@ -9,7 +9,7 @@ import numpy as np
 from dataclasses import dataclass
 
 from .poker_env import (
-    Action, NUM_ACTIONS, OBS_DIM, CARD_IDX, cards_to_onehot, STREETS,
+    Action, NUM_ACTIONS, OBS_DIM, cards_to_onehot, STREETS,
     hand_strength, draw_potential, raise_frac_to_amount,
 )
 from .ppo_agent import PPOAgent

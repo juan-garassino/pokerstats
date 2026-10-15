@@ -10,7 +10,6 @@ Components:
 import numpy as np
 import torch
 import torch.nn as nn
-import math
 
 from .poker_env import NUM_ACTIONS, Action
 

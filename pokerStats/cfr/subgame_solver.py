@@ -12,10 +12,9 @@ import time
 import numpy as np
 from typing import Optional
 
-from pokerStats.rl.poker_env import PokerEnv, Action, STREETS
+from pokerStats.rl.poker_env import PokerEnv, STREETS
 from .cfr_solver import (
-    InfoSet, NUM_CFR_ACTIONS, CFR_ACTIONS,
-    cfr_to_env_action, env_legal_to_cfr_mask,
+    InfoSet, NUM_CFR_ACTIONS, cfr_to_env_action, env_legal_to_cfr_mask,
 )
 from .abstraction import HandAbstraction
 from .blueprint import BlueprintStrategy
