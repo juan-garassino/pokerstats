@@ -245,12 +245,15 @@ python rl_live_bridge.py --model checkpoints/best.pt --dry-run
 - `render_mode="ascii"` on `PokerEnv` prints the full table to stdout each step
 ---
 
-## Known issues
+## Fixed (2026-11-11) — RL env betting rules
 
-Verified 2026-11-11 against `pokerStats/rl/poker_env.py` with a throwaway script (not fixed; `reference/poker_env.py` has the same logic):
+Fixed in `pokerStats/rl/poker_env.py`, covered by `tests/test_poker_env_rules.py`:
 
-- **Heads-up blinds are wrong.** With `num_players=2`, `reset()` posts SB at `dealer+1` and BB at `dealer+2` (= the dealer), so the **dealer posts the big blind**. Correct HU: dealer posts SB, acts first preflop and last postflop. As written, the SB (non-dealer) acts first on every street.
-- **No big-blind option, and checked streets end after one check.** `_advance()` closes the street as soon as every active player's `current_bet` matches the max, with no "has acted since the last aggression" tracking. Preflop limp-around (any table size) goes to the flop without the BB acting; postflop, the first check ends the street. Fix shape: track `acted_this_street` per player (reset on bet/raise) and close only when all players who can act have acted and matched. Affects every self-play run trained on this env.
+- **Heads-up blinds:** the dealer now posts the SB and acts first preflop; the BB acts first postflop. 3+ players: SB = dealer+1, BB = dealer+2, preflop first = BB+1, postflop first = first seat after the dealer that can act.
+- **Big-blind option:** a preflop limp-around now gives the BB its option (check or raise).
+- **Checked streets:** a street closes only when every player who can act has acted since the last bet/raise (tracked in `PokerEnv._acted`, reset on each street and on any bet/raise, copied by `clone()`) and all bets are matched, or when at most one player can still act. A short all-in raise re-opens action too (simplification vs. full NLHE rules).
+
+Obs vector (`OBS_DIM=160`) and action interface (5 actions + `raise_frac`) are unchanged. **Policies/checkpoints trained before this fix learned on wrong rules (no BB option, one-check streets, reversed heads-up positions) — retrain before trusting them.** `reference/poker_env.py` is a frozen older copy (7 actions, 147-dim obs) and still has the old logic.
 
 ## Ideas / parked (earlier chats)
 

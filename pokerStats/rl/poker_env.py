@@ -297,6 +297,7 @@ class PokerEnv:
         self.episode:      int   = 0
         self.last_bet:     float = 0.0
         self.raises_this_street: int = 0
+        self._acted:       set   = set()  # seats that acted since the last bet/raise this street
         self._action_log:  list  = []
         self._action_ids:  list  = []   # numeric action history for obs vector
         self._done:        bool  = False
@@ -310,6 +311,7 @@ class PokerEnv:
         self.street_idx = 0
         self.last_bet   = self.big_blind
         self.raises_this_street = 0
+        self._acted     = set()   # blinds are not voluntary actions: BB keeps its option
         self._action_log = []
         self._action_ids = []
         self._done      = False
@@ -362,14 +364,19 @@ class PokerEnv:
         # Rotate dealer
         self.dealer_idx = (self.dealer_idx + 1) % self.num_players
 
-        # Post blinds
-        sb_idx = (self.dealer_idx + 1) % self.num_players
-        bb_idx = (self.dealer_idx + 2) % self.num_players
+        # Post blinds. Heads-up the dealer posts the SB (and acts first preflop);
+        # 3+ players: SB = dealer+1, BB = dealer+2.
+        if self.num_players == 2:
+            sb_idx = self.dealer_idx
+        else:
+            sb_idx = (self.dealer_idx + 1) % self.num_players
+        bb_idx = (sb_idx + 1) % self.num_players
         self._post_blind(sb_idx, self.small_blind)
         self._post_blind(bb_idx, self.big_blind)
 
-        # First to act preflop: UTG (dealer+3)
-        self.current_player = (self.dealer_idx + 3) % self.num_players
+        # First to act preflop: the seat after the BB (= dealer heads-up),
+        # skipping anyone already all-in from posting a blind.
+        self.current_player = self._first_can_act_from((bb_idx + 1) % self.num_players)
 
         if self.render_mode == "unicode":
             print(self._render_unicode())
@@ -412,6 +419,7 @@ class PokerEnv:
                     break
 
         call_amt = self._call_amount(self.current_player)
+        max_bet_before = p.current_bet + call_amt
         action   = Action(action)
         amt      = 0.0
 
@@ -462,6 +470,13 @@ class PokerEnv:
         # Record action id for obs vector (fixes _action_ids bug)
         self._action_ids.append(int(action))
 
+        # Track who has acted since the last aggression. A bet/raise (incl. an
+        # all-in that raises the max bet) re-opens action for everyone else.
+        if action in (Action.RAISE, Action.ALL_IN) and p.current_bet > max_bet_before:
+            self._acted = {self.current_player}
+        else:
+            self._acted.add(self.current_player)
+
         # Track action metadata for opponent modeling
         action_player = self.current_player
         action_taken = int(action)
@@ -491,7 +506,12 @@ class PokerEnv:
 
     # ── Action advancement ────────────────────────────────────────────────────
     def _advance(self):
-        """Move to the next player or next street."""
+        """Move to the next player or next street.
+
+        A street closes only when every player who can still act has acted
+        since the last bet/raise and has matched the highest bet, or when at
+        most one player can still act and nobody owes chips.
+        """
         active = [p for p in self.players if not p.folded]
 
         # Everyone but one folded -> end hand
@@ -499,39 +519,46 @@ class PokerEnv:
             self._end_hand(active)
             return
 
-        # Check if betting round is complete
         can_act = [p for p in active if p.can_act]
         max_bet = max((p.current_bet for p in active), default=0)
-        all_matched = all(p.current_bet == max_bet or not p.can_act for p in active)
 
-        if all_matched and not can_act:
-            # All in — run out the board
+        if len(can_act) <= 1 and all(p.current_bet >= max_bet for p in can_act):
+            # No betting possible any more — run out the board
             while self.street_idx < 3:
                 self._deal_next_street()
             self._showdown()
             return
 
-        if all_matched and can_act:
+        pending = {p.idx for p in can_act
+                   if p.idx not in self._acted or p.current_bet < max_bet}
+
+        if not pending:
             # Street complete
             if self.street_idx < 3:
                 self._deal_next_street()
-                return
             else:
                 self._showdown()
-                return
+            return
 
-        # Find next active player
+        # Next player in seat order who still owes an action
         nxt = (self.current_player + 1) % self.num_players
-        while self.players[nxt].folded or not self.players[nxt].can_act:
+        while nxt not in pending:
             nxt = (nxt + 1) % self.num_players
-            if nxt == self.current_player:
-                break
         self.current_player = nxt
+
+    def _first_can_act_from(self, start: int) -> int:
+        """First seat at or after `start` that can still act (start if none)."""
+        for k in range(self.num_players):
+            i = (start + k) % self.num_players
+            if self.players[i].can_act:
+                return i
+        return start
 
     def _deal_next_street(self):
         """Deal community cards and reset betting for new street."""
         self.street_idx += 1
         self.raises_this_street = 0
+        self._acted = set()
         for p in self.players:
             p.current_bet = 0.0
         self.last_bet = self.big_blind
@@ -541,15 +568,9 @@ class PokerEnv:
         elif self.street_idx in (2, 3):  # turn, river
             self.community.append(self.deck.pop())
 
-        # First to act postflop: first active left of dealer
-        nxt = (self.dealer_idx + 1) % self.num_players
-        start = nxt
-        while self.players[nxt].folded or self.players[nxt].all_in:
-            nxt = (nxt + 1) % self.num_players
-            if nxt == start:
-                # Everyone is all-in or folded — no one to act
-                break
-        self.current_player = nxt
+        # First to act postflop: first seat after the dealer that can act
+        # (heads-up that is the BB, since the dealer posts the SB).
+        self.current_player = self._first_can_act_from((self.dealer_idx + 1) % self.num_players)
 
         if self.render_mode == "unicode":
             line = "\u2500" * 40
@@ -805,6 +826,7 @@ class PokerEnv:
         c.episode        = self.episode
         c.last_bet       = self.last_bet
         c.raises_this_street = self.raises_this_street
+        c._acted         = set(self._acted)
         c._action_log    = list(self._action_log)
         c._action_ids    = list(self._action_ids)
         c._done          = self._done
