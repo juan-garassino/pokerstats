@@ -243,3 +243,22 @@ python rl_live_bridge.py --model checkpoints/best.pt --dry-run
 - All DB stats are **raw counts**, normalized at read time in `OpponentProfile`
 - `dry_run=True` on `ActionExecutor` prints decisions without touching the mouse
 - `render_mode="ascii"` on `PokerEnv` prints the full table to stdout each step
+---
+
+## Known issues
+
+Verified 2026-11-11 against `pokerStats/rl/poker_env.py` with a throwaway script (not fixed; `reference/poker_env.py` has the same logic):
+
+- **Heads-up blinds are wrong.** With `num_players=2`, `reset()` posts SB at `dealer+1` and BB at `dealer+2` (= the dealer), so the **dealer posts the big blind**. Correct HU: dealer posts SB, acts first preflop and last postflop. As written, the SB (non-dealer) acts first on every street.
+- **No big-blind option, and checked streets end after one check.** `_advance()` closes the street as soon as every active player's `current_bet` matches the max, with no "has acted since the last aggression" tracking. Preflop limp-around (any table size) goes to the flop without the BB acting; postflop, the first check ends the street. Fix shape: track `acted_this_street` per player (reset on bet/raise) and close only when all players who can act have acted and matched. Affects every self-play run trained on this env.
+
+## Ideas / parked (earlier chats)
+
+From an earlier chat about an LLM-driven Hold'em engine (imported 2026-11-11). Ideas, not scheduled. Local conventions win: cards use `T` (never `10`), raises are sized via `raise_frac` in the env and `Decision.amount` (absolute) live, `GameState` stays a dataclass.
+
+- **LLM policy behind the existing interface.** An `LLMPolicy` implementing the PPO contract `get_action(obs, legal_mask, deterministic) -> (action, raise_frac, log_prob, value, entropy)` (dummy log-prob/value/entropy), so it can sit in a self-play seat or replace the agent inside `rl_live_bridge.RLDecisionEngine`. It should prompt from structured state (the `decide(...)` arguments or the env's per-player view), not from the 160-dim obs vector. Backends via LlamaIndex structured outputs: OpenAI, Anthropic, Ollama (native structured output where the provider supports tools, text-completion program as the Ollama fallback); model names are config, keys from env, never hardcoded.
+- **Filtered state view.** The LLM only ever sees the active player's hole cards plus public information (board, stacks, pot, blinds, button, ordered action history). Never serialize the full env/table state into a prompt.
+- **Invalid output handling.** Map the LLM's choice through `legal_mask`; on an illegal or unparsable answer, retry once with the error message, then fall back to check > call > fold (the env's own fallback order). Log the invalid-action rate per model.
+- **Game-state chat Q&A.** "Why did seat 3 fold?", "what are my pot odds?" over the current state + hand history, respecting hidden information for the asking player.
+- **LLM-vs-LLM benchmark.** Per-seat model config (e.g. seat 1 OpenAI, seat 2 Anthropic, seat 3 Ollama, plus the PPO agent as a reference seat); N hands, report chip delta (BB/100), invalid-action rate, latency and tokens.
+- Parked, not adopted: the chat's standalone Pydantic `GameState`/`PokerDecision` models and its separate `poker/` package layout (this repo already has the env, side pots and a real evaluator in `pokerStats/`).
